@@ -128,7 +128,7 @@ def clust_to_mask(cluster, cid):
     mask[cluster==cid]+=1
     return mask
 
-def plot(positions, c=None,title="", fixed_indices=[], filename=None):
+def plot_graph(positions, graph, c=None, title="", fixed_indices=[], filename=None):
     plt.figure(figsize=(20,10))
     ax = plt.axes()
     ax.set_xlim(min(positions[:,0]), max(positions[:,0]))
@@ -150,42 +150,3 @@ def plot(positions, c=None,title="", fixed_indices=[], filename=None):
     if filename is not None:
         plt.savefig(filename + '.svg', format='svg', dpi=1000)
     return ax
-
-"""
-import time
-from IPython import display
-from IPython.display import clear_output
-
-plt.figure(figsize=(20,10))
-ax = plt.axes()
-#idx = np.linspace(0, len(param_hist)-1, num=10,dtype=int)
-idx = np.arange(0, len(param_hist)-1)
-idx = idx**2
-idx = idx[idx < len(param_hist)-1]
-for j in idx:
-    positions = param_hist[j]
-    
-    ax.set_xlim(min(positions[:,0]), max(positions[:,0]))
-    ax.set_ylim(min(positions[:,1]), max(positions[:,1]))
-
-    lines = []
-    for i,j in zip(*graph.nonzero()):
-        if i > j:
-            lines.append([positions[i], positions[j]])
-
-    lc = mc.LineCollection(lines, linewidths=1, colors='k', alpha=.25)
-    ax.clear()
-    ax.add_collection(lc)
-    ax.scatter(positions[:,0], positions[:,1], s=5, c=fixed_idx)
-    display.clear_output(wait=True)
-    display.display(plt.gcf())
-    #time.sleep(0.1)
-"""
-
-"""
-from sklearn.manifold import SpectralEmbedding
-
-embedding = SpectralEmbedding(n_components=2,affinity='precomputed',eigen_solver='lobpcg')
-#X_transformed = embedding.fit_transform(graph.toarray().astype(int)!= 0)
-X_transformed = embedding.fit_transform(L)
-"""
