@@ -12,3 +12,5 @@ Both methods are applied to a toy graph (qh882) visualization problem. In this c
 utils.py includes matrix utilities, optimization functionals (adaptive momentum & one-step updates), a simple voxel clustering algorithm, and a graph plotter.
 
 check ev_init_pgd_top_level.gif for an animation of the pgd procedure.
+
+![](results/ev_init_pgd_top_level.gif)
