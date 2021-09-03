@@ -67,7 +67,6 @@ def psgd(projector):
     return projector(x - a * g)
   def get_params(x):
     return x
-  #return Optimizer(init, update, get_params)
   return init, update, get_params
 
 @optimizer
@@ -120,6 +119,16 @@ def voxel_cluster(pos, size):
 
     return out, voxels
 
+def quad_voxel_cluster(pos,size):
+    pos = pos.reshape(pos.shape[0],-1)
+    start = pos.min(0)
+    end = pos.max(0)
+    pos = pos - jnp.expand_dims(start,0);
+
+    num_voxels = jnp.divide(end - start,size).astype(int) + 1
+    
+    return out, voxels    
+
 def voxel2centroid(voxelcoord, size, offset):
     return voxelcoord*size - offset
 
@@ -144,7 +153,7 @@ def plot_graph(positions, graph, c=None, title="", fixed_indices=[], filename=No
     ax.scatter(positions[:,0], positions[:,1], s=5, c=c)
 
     for c in fixed_indices:
-        ax.annotate('({},{})'.format(str(np.round(X_k_n[c, 0],2)), str(np.round(X_k_n[c, 1],2))), (X_k_n[c, 0], X_k_n[c, 1]))
+        ax.annotate('({},{})'.format(str(np.round(positions[c, 0],2)), str(np.round(positions[c, 1],2))), (positions[c, 0], positions[c, 1]))
 
     plt.title(title)    
     if filename is not None:
