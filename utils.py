@@ -38,6 +38,12 @@ def _sqrtm(C):
     sqrt_matrix = evectors @ jnp.diag(jnp.sqrt(evalues)) @ jnp.linalg.inv(evectors)
     return sqrt_matrix.real
 
+def qr_null(A, tol=None):
+    Q, R, P = sp.linalg.qr(A.T, mode='full', pivoting=True)
+    tol = np.finfo(R.dtype).eps if tol is None else tol
+    rnk = min(A.shape) - np.abs(np.diag(R))[::-1].searchsorted(tol)
+    return Q,Q[:, rnk:].conj()
+
 def constant(step_size) -> Schedule:
   def schedule(i):
     return step_size
