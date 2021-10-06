@@ -1,3 +1,20 @@
+from typing import Any, Callable, NamedTuple, Tuple, Union
+Step = int
+Schedule = Callable[[Step], float]
+
+import jax
+from jax import jit, vmap, random, grad, value_and_grad, hessian
+from jax.experimental import optimizers
+from jax.experimental.optimizers import optimizer
+from jax import numpy as jnp
+
+from functools import partial
+
+import numpy as np
+import utils
+from objectives import *
+
+
 def constant(step_size) -> Schedule:
   def schedule(i):
     return step_size
@@ -117,12 +134,22 @@ def _step(i, opt_state, Z):
     return opt_update(i, Z, opt_state)
 
 @jit
-def project(X1, C, c=jnp.array([0,0])):
+def project(X1, C, E_0, c=jnp.array([0,0])):
     C1 = X1.T@X1
     C1sqrt = utils._sqrtm(C1)
     Csqrt = utils._sqrtm(C)
     U,s,V = jnp.linalg.svd(Csqrt@C1sqrt)
     X = X1@jnp.linalg.inv(C1sqrt)@U@V.T@Csqrt
+
+    # default to this unless not improve cost
+    # normalized v as Q
+    negdef = jnp.all(jnp.linalg.eigvals(X.T@E_0) <= 0)
+    U_E, _, V_E = jnp.linalg.svd(X.T@E_0)
+    X = jax.lax.cond(negdef,
+                     lambda _ : X@(-U_E@V_E.T),
+                     lambda _ : X,
+                     operand=None
+                    )
     return X.real
 
 @jit

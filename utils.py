@@ -15,13 +15,16 @@ from jax.experimental import optimizers
 from jax.experimental.optimizers import optimizer
 from jax import numpy as jnp
 
+import utils
+from objectives import *
+
 from functools import partial
 import itertools
 
 import numpy as np
 import numpy.random as npr
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
 from matplotlib import collections as mc
 import seaborn as sns
 
@@ -30,6 +33,8 @@ from tqdm.notebook import tqdm
 
 import networkx as nx
 
+
+"""====Matrix utilities==== """
 
 def _sqrtm(C):
     # Computing diagonalization
@@ -44,69 +49,26 @@ def qr_null(A, tol=None):
     rnk = min(A.shape) - np.abs(np.diag(R))[::-1].searchsorted(tol)
     return Q,Q[:, rnk:].conj()
 
-def constant(step_size) -> Schedule:
-  def schedule(i):
-    return step_size
-  return schedule
+"""====Graph utilities==== """
 
-def make_schedule(scalar_or_schedule: Union[float, Schedule]) -> Schedule:
-  if callable(scalar_or_schedule):
-    return scalar_or_schedule
-  elif jnp.ndim(scalar_or_schedule) == 0:
-    return constant(scalar_or_schedule)
-  else:
-    raise TypeError(type(scalar_or_schedule))
-    
-    
-@optimizer
-def psgd(projector):
-  """Construct optimizer triple for stochastic gradient descent.
-  Args:
-    step_size: positive scalar, or a callable representing a step size schedule
-      that maps the iteration index to positive scalar.
-  Returns:
-    An (init_fun, update_fun, get_params) triple.
-  """
-  def init(x0):
-    return x0
-  def update(a, g, x):
-    return projector(x - a * g)
-  def get_params(x):
-    return x
-  return init, update, get_params
+def load_graph(graphpath, plot_adjacency=False, verbose=True):
+    mat_data = io.loadmat(graphpath + '.mat')
+    graph = mat_data['Problem']['A'][0][0]
 
-@optimizer
-def padam(step_size, projector, b1=0.9, b2=0.999, eps=1e-8):
-  """Construct optimizer triple for Adam.
-  Args:
-    step_size: positive scalar, or a callable representing a step size schedule
-      that maps the iteration index to positive scalar.
-    b1: optional, a positive scalar value for beta_1, the exponential decay rate
-      for the first moment estimates (default 0.9).
-    b2: optional, a positive scalar value for beta_2, the exponential decay rate
-      for the second moment estimates (default 0.999).
-    eps: optional, a positive scalar value for epsilon, a small constant for
-      numerical stability (default 1e-8).
-  Returns:
-    An (init_fun, update_fun, get_params) triple.
-  """
-  step_size = make_schedule(step_size)
-  def init(x0):
-    m0 = jnp.zeros_like(x0)
-    v0 = jnp.zeros_like(x0)
-    return x0, m0, v0
-  def update(i, g, state):
-    x, m, v = state
-    m = (1 - b1) * g + b1 * m  # First  moment estimate.
-    v = (1 - b2) * jnp.square(g) + b2 * v  # Second moment estimate.
-    mhat = m / (1 - jnp.asarray(b1, m.dtype) ** (i + 1))  # Bias correction.
-    vhat = v / (1 - jnp.asarray(b2, m.dtype) ** (i + 1))
-    x = projector(x - step_size(i) * mhat / (jnp.sqrt(vhat) + eps))
-    return x, m, v
-  def get_params(state):
-    x, _, _ = state
-    return x
-  return init, update, get_params
+    G = nx.from_numpy_matrix(graph.toarray().astype(int)!= 0, create_using=None)
+    A = nx.adjacency_matrix(G).toarray().astype(np.int16)
+    L = csgraph_laplacian(A, normed=False).astype(np.float32)
+    D = np.diag(np.sum(A, axis=1)).astype(np.int16)
+    n = A.shape[0]
+    
+    if verbose:
+        print(nx.info(G))
+    if plot_adjacency:
+        plot_adjacency(A)
+        
+    return G, A, L, D, n
+
+"""====Voxel clustering==== """
 
 def voxel_cluster(pos, size):
     pos = pos.reshape(pos.shape[0],-1)
@@ -143,6 +105,57 @@ def clust_to_mask(cluster, cid):
     mask[cluster==cid]+=1
     return mask
 
+"""====Visualization utilities==== """
+
+def plot_results(result,sigfig=2):
+    """result keys: x, lossh, sln_path, g, h, step_sizes"""
+    fig, axes = plt.subplots(
+    3, 2, figsize=(25, 8), sharex=True)
+    
+    foc = result['foc']
+    log_foc = np.log(foc)
+    step_sizes = result['step_sizes']
+    loss_history = result['lossh']
+    log_loss_history = np.log(loss_history)
+    min_loss = np.min(loss_history)
+    min_logloss = np.min(log_loss_history)
+    min_loss_idx = np.argmin(loss_history)
+    
+    gc = np.round(result['g'], sigfig)
+    hc = np.round(result['h'], sigfig)
+    
+    axes[0,0].plot(loss_history)
+    axes[0,0].set_title('loss: {:.3f} h: {} g: {}'.format(min_loss, np.round(hc,sigfig), np.round(gc,sigfig)))
+     
+        
+    axes[0,1].plot(log_loss_history)
+    axes[0,1].set_title('log-loss: {:.3f}'.format(min_logloss))
+     
+    axes[1,0].plot(step_sizes)
+    axes[1,0].set_title('step sizes')
+    axes[1,1].plot(np.log(step_sizes))
+    axes[1,1].set_title('log-step sizes')
+    
+    axes[2,0].plot(foc)
+    axes[2,0].set_title('first order condtion initial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(foc[0], foc[-1], foc[min_loss_idx]))
+    axes[2,1].plot(log_foc)
+    axes[2,1].set_title('log-first order condtioninitial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(log_foc[0], log_foc[-1],log_foc[min_loss_idx]))    
+    
+    for ax in axes:
+        ax[0].axvline(x=min_loss_idx, c='gray')
+        ax[1].axvline(x=min_loss_idx, c='gray')
+    return fig
+
+def plot_adjacency(A):
+    fig, (ax1, ax2) = plt.subplots(ncols=2,figsize=(10,20))
+    ax1.imshow(graph.todense()!=0, cmap='gray')
+    ax1.set_title("adjacency")
+    graphdist = csgraph.shortest_path(graph, directed=False, unweighted=True)
+    ax2.set_title("graph distances")
+    ax2.imshow(graphdist, cmap='gray')
+    
+    return fig
+    
 def plot_graph(positions, graph, c=None, title="", fixed_indices=[], filename=None):
     plt.figure(figsize=(20,10))
     ax = plt.axes()
