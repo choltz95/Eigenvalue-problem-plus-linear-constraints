@@ -34,6 +34,9 @@ def foc_sqp(X, L, C, A, E_0):
     obj = A@X + E_0 + X@L
     return jnp.linalg.norm(obj.real)
 
+def soc(L, P):
+    pass
+
 def g(X, v, c):
     return np.array([v.T@X[:,0], v.T@X[:,1]]) - c
 

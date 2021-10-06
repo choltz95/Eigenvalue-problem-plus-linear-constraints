@@ -25,6 +25,7 @@ import numpy as np
 import numpy.random as npr
 
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtrans
 from matplotlib import collections as mc
 import seaborn as sns
 
@@ -66,7 +67,7 @@ def load_graph(graphpath, plot_adjacency=False, verbose=True):
     if plot_adjacency:
         plot_adjacency(A)
         
-    return G, A, L, D, n
+    return graph, G, A, L, D, n
 
 """====Voxel clustering==== """
 
@@ -144,6 +145,18 @@ def plot_results(result,sigfig=2):
     for ax in axes:
         ax[0].axvline(x=min_loss_idx, c='gray')
         ax[1].axvline(x=min_loss_idx, c='gray')
+     
+    #pap = result['P']@L@result['P'].T
+    #print(result['L'][-1].real,
+    #np.linalg.eig(['L'][-1])[0].real, 
+    #np.sort(np.linalg.eig(pap)[0])[:10].real,
+    #1.0 - ( np.count_nonzero(pap) / float(pap.size) ), 1.0 - ( np.count_nonzero(L) / float(L.size) ))
+    
+    trans = mtrans.blended_transform_factory(fig.transFigure,
+                                         mtrans.IdentityTransform())
+
+    txt = fig.text(.5, 15, "second order condition: {}", ha='center')
+    txt.set_transform(trans)
     return fig
 
 def plot_adjacency(A):
@@ -178,3 +191,45 @@ def plot_graph(positions, graph, c=None, title="", fixed_indices=[], filename=No
     if filename is not None:
         plt.savefig(filename + '.svg', format='svg', dpi=1000)
     return ax
+
+def plot_animation(results, directory_name='./frames/'):
+    """Generate animation frames """
+
+    if os.path.exists(directory_name):
+        shutil.rmtree(directory_name)
+    os.makedirs(directory_name)
+
+    plt.figure(figsize=(20,10))
+    ax = plt.axes()
+
+    for l, result in enumerate(results):
+        param_hist = result['sln_path']
+        idx = np.linspace(0, len(param_hist)-1, num=numframes,dtype=int)
+        P_tmp = result['P']
+        P_x_tmp = P_tmp
+        P_y_tmp = P_tmp
+        n0_x_tmp, n0_y_tmp = result['n']
+        for k in idx:
+            X_k_tmp = param_hist[k]
+
+            X_k_n_tmp = np.zeros((n0_x_tmp.shape[0],2))
+            X_k_n_tmp[:,0] = np.array(P_x_tmp.T@X_k_tmp[:,0]) + n0_x_tmp.T
+            X_k_n_tmp[:,1] = np.array(P_y_tmp.T@X_k_tmp[:,1]) + n0_y_tmp.T
+            positions_tmp = X_k_n_tmp
+
+            ax.clear()
+
+            ax = utils.plot_graph(X_k_n_tmp, graph, c=voxel_id)
+
+            plt.savefig(directory_name+'{}_{}.png'.format(l, k))
+            display.clear_output(wait=True)
+            display.display(plt.gcf())
+        
+    # save animation as gif
+    # filepaths
+    fp_in = directory_name+"*.png"
+    fp_out = directory_name+"./frames/animation.gif"
+
+    img, *imgs = [Image.open(f) for f in sorted(glob.glob(fp_in),key=os.path.getmtime)]
+    img.save(fp=fp_out, format='GIF', append_images=imgs,
+             save_all=True, duration=500, loop=0)
