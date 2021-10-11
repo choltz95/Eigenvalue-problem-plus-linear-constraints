@@ -52,12 +52,15 @@ def qr_null(A, tol=None):
 
 """====Graph utilities==== """
 
-def load_graph(graphpath, plot_adjacency=False, verbose=True):
-    mat_data = io.loadmat(graphpath + '.mat')
-    graph = mat_data['Problem']['A'][0][0]
-
-    G = nx.from_numpy_matrix(graph.toarray().astype(int)!= 0, create_using=None)
-    A = nx.adjacency_matrix(G).toarray().astype(np.int16)
+def load_graph(graphpath, A=None, plot_adjacency=False, verbose=True):
+    if A is None:
+        mat_data = io.loadmat(graphpath + '.mat')
+        graph = mat_data['Problem']['A'][0][0]
+        G = nx.from_numpy_matrix(graph.toarray().astype(int)!= 0, create_using=None)
+        A = nx.adjacency_matrix(G).toarray().astype(np.int16)
+    else:
+        G = nx.from_numpy_matrix(A.astype(int)!= 0, create_using=None)
+        graph = sp.sparse.csc_matrix(A)
     L = csgraph_laplacian(A, normed=False).astype(np.float32)
     D = np.diag(np.sum(A, axis=1)).astype(np.int16)
     n = A.shape[0]
@@ -138,9 +141,9 @@ def plot_results(result,sigfig=2):
     axes[1,1].set_title('log-step sizes')
     
     axes[2,0].plot(foc)
-    axes[2,0].set_title('first order condtion initial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(foc[0], foc[-1], foc[min_loss_idx]))
+    axes[2,0].set_title('first order condtion: initial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(foc[0], foc[-1], foc[min_loss_idx]))
     axes[2,1].plot(log_foc)
-    axes[2,1].set_title('log-first order condtioninitial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(log_foc[0], log_foc[-1],log_foc[min_loss_idx]))    
+    axes[2,1].set_title('log-first order condtion: initial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(log_foc[0], log_foc[-1],log_foc[min_loss_idx]))    
     
     for ax in axes:
         ax[0].axvline(x=min_loss_idx, c='gray')
@@ -228,7 +231,7 @@ def plot_animation(results, directory_name='./frames/'):
     # save animation as gif
     # filepaths
     fp_in = directory_name+"*.png"
-    fp_out = directory_name+"./frames/animation.gif"
+    fp_out = directory_name+"animation.gif"
 
     img, *imgs = [Image.open(f) for f in sorted(glob.glob(fp_in),key=os.path.getmtime)]
     img.save(fp=fp_out, format='GIF', append_images=imgs,
