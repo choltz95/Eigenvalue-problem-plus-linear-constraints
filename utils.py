@@ -3,6 +3,10 @@ Step = int
 Schedule = Callable[[Step], float]
 
 import scipy.io as io
+
+import sys, os, shutil, glob
+from PIL import Image
+
 import scipy.sparse.csgraph as csgraph
 from scipy.sparse.csgraph import laplacian as csgraph_laplacian
 import scipy as sp
@@ -195,7 +199,7 @@ def plot_graph(positions, graph, c=None, title="", fixed_indices=[], filename=No
         plt.savefig(filename + '.svg', format='svg', dpi=1000)
     return ax
 
-def plot_animation(results, directory_name='./frames/'):
+def plot_animation(results, graph, fixed_coordinates=None, directory_name='./frames/', numframes=100):
     """Generate animation frames """
 
     if os.path.exists(directory_name):
@@ -207,26 +211,34 @@ def plot_animation(results, directory_name='./frames/'):
 
     for l, result in enumerate(results):
         param_hist = result['sln_path']
-        idx = np.linspace(0, len(param_hist)-1, num=numframes,dtype=int)
+        idx = np.linspace(0, len(param_hist)-1, num=min(numframes,len(param_hist)),dtype=int)
         P_tmp = result['P']
         P_x_tmp = P_tmp
         P_y_tmp = P_tmp
         n0_x_tmp, n0_y_tmp = result['n']
         for k in idx:
-            X_k_tmp = param_hist[k]
-
+            X_k_tmp = param_hist[k]       
             X_k_n_tmp = np.zeros((n0_x_tmp.shape[0],2))
             X_k_n_tmp[:,0] = np.array(P_x_tmp.T@X_k_tmp[:,0]) + n0_x_tmp.T
             X_k_n_tmp[:,1] = np.array(P_y_tmp.T@X_k_tmp[:,1]) + n0_y_tmp.T
             positions_tmp = X_k_n_tmp
+            
+            #### TEMPORARY
+            X_k_n_tmp = np.concatenate([fixed_coordinates, positions_tmp])
+            ####
+            
+            
+            
+            voxel_id, voxel_bound = voxel_cluster(X_k_n_tmp, np.array([5, 5]))
 
             ax.clear()
 
             ax = utils.plot_graph(X_k_n_tmp, graph, c=voxel_id)
 
             plt.savefig(directory_name+'{}_{}.png'.format(l, k))
-            display.clear_output(wait=True)
-            display.display(plt.gcf())
+            # only needed for inline animation
+            #display.clear_output(wait=True)
+            #display.display(plt.gcf())
         
     # save animation as gif
     # filepaths
