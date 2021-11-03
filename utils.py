@@ -50,9 +50,12 @@ def _sqrtm(C):
 
 def qr_null(A, tol=None):
     Q, R, P = sp.linalg.qr(A.T, mode='full', pivoting=True)
-    tol = np.finfo(R.dtype).eps if tol is None else tol
-    rnk = min(A.shape) - np.abs(np.diag(R))[::-1].searchsorted(tol)
-    return Q,Q[:, rnk:].conj()
+    tol = jnp.finfo(R.dtype).eps if tol is None else tol
+    Q=jnp.array(Q)
+    rnk = min(A.shape) - jnp.searchsorted(jnp.abs(jnp.diag(R))[::-1], tol)#jnp.abs(jnp.diag(R))[::-1].searchsorted(tol)
+    #rnk = min(A.shape) - np.abs(jnp.diag(R))[::-1].searchsorted(tol)
+    #return Q[:, rnk:].conj()
+    return Q, rnk
 
 """====Graph utilities==== """
 
@@ -61,12 +64,15 @@ def load_graph(graphpath, A=None, plot_adjacency=False, verbose=True):
         mat_data = io.loadmat(graphpath + '.mat')
         graph = mat_data['Problem']['A'][0][0]
         G = nx.from_numpy_matrix(graph.toarray().astype(int)!= 0, create_using=None)
-        A = nx.adjacency_matrix(G).toarray().astype(np.int16)
+        #A = nx.adjacency_matrix(G).toarray().astype(np.int16)
+        #A = nx.adjacency_matrix(G).astype(np.int16)
+        A = nx.convert_matrix.to_scipy_sparse_matrix(G).astype(np.int16)
     else:
         G = nx.from_numpy_matrix(A.astype(int)!= 0, create_using=None)
         graph = sp.sparse.csc_matrix(A)
-    L = csgraph_laplacian(A, normed=False).astype(np.float32)
-    D = np.diag(np.sum(A, axis=1)).astype(np.int16)
+        A = sp.sparse.coo_matrix(A).astype(np.int16)
+    L = sp.sparse.csr_matrix(csgraph_laplacian(A, normed=False)).astype(np.float32)
+    D = np.diag(np.sum(A, axis=1))
     n = A.shape[0]
     
     if verbose:
