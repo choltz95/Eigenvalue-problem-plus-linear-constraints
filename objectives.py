@@ -13,26 +13,26 @@ from functools import partial
 import numpy as np
 import utils
 
-@jit
+@jit # A_x = A_y
 def f(X, A_x, A_y, b_x, b_y):
     obj= X[:,0].T@A_x@X[:,0] + X[:,1].T@A_y@X[:,1] + 2*b_x.T@X[:,0] + 2*b_y.T@X[:,1]
-    return obj.real
+    return obj, obj
 
 @jit
 def f_l(X, L, C, A_x, A_y, b_x, b_y):
     obj = jnp.trace(jnp.inner(X, A_x@X + 2*jnp.stack([b_x,b_y],axis=1))) + jnp.trace(jnp.inner(L, X.T@X - C))
-    return obj.real
+    return obj
 
 @jit
 def foc_pgd(X, L, C, A, b_x, b_y):
     obj = jnp.linalg.norm((A + L[0,0]*jnp.eye(A.shape[0]))@X[:,0] + L[1,0]*X[:,1] + b_x) + \
     jnp.linalg.norm((A + L[1,1]*jnp.eye(A.shape[0]))@X[:,1] + L[1,0]*X[:,0] + b_y)
-    return obj.real
+    return obj
 
 @jit
 def foc_sqp(X, L, C, A, E_0):
     obj = A@X + E_0 + X@L
-    return jnp.linalg.norm(obj.real)
+    return jnp.linalg.norm(obj)
 
 def soc(L, P):
     pass

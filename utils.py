@@ -9,13 +9,14 @@ from PIL import Image
 
 import scipy.sparse.csgraph as csgraph
 from scipy.sparse.csgraph import laplacian as csgraph_laplacian
-import scipy as sp
-from scipy.linalg import null_space
+from scipy import sparse as sp
+#import scipy as 
+from scipy.linalg import null_space, qr
 from scipy.linalg import sqrtm
 
 import jax
 from jax import jit, vmap, random, grad
-from jax.experimental import optimizers
+from jax.experimental import optimizers, sparse
 from jax.experimental.optimizers import optimizer
 from jax import numpy as jnp
 
@@ -39,6 +40,111 @@ from tqdm.notebook import tqdm
 import networkx as nx
 
 
+def rqi(A, M=None, v=None, s=0, k=2, eps=1e-6, maxiters=100, seed=0):
+    """Rayleigh quotient iteration 
+    Args:
+        A: A sparse jax matrix. Should be Hermitian and close to psd (for cg)
+        M: Preconditioner for A
+        v: constraint vector.
+        s: bound on the smallest eigenvalue
+        k: optional ridge regularization.
+        maxiters: maximum # iterations
+        eps:  rqi tolerance
+        seed: random seed
+
+    Returns:
+        U: eigenvectors of A corresponding to S (columns)
+        S: smallest k eigenvalues of A."""
+    n = A.shape[0]
+    key = jax.random.PRNGKey(seed)
+    u_0 = jax.random.normal(key, shape=(n,1))
+    
+    if v == None:
+        v = jnp.ones((n,1))/jnp.sqrt(n)
+        #v = jax.random.normal(key, shape=(n,1)) + 1
+        #v = v / np.linalg.norm(v)
+        #v = A@v
+    I = sp.identity(n)
+    I = sparse.BCOO.from_scipy_sparse(I)
+    s = 0.
+    As = A - s*I
+    _matvec = lambda x: As@x
+    matvec = jit(_matvec)  
+    
+    def Aspsolve(b, **kwargs):
+        return jax.scipy.sparse.linalg.cg(matvec, b, M=M, **kwargs)[0]
+ 
+    v_1 = Aspsolve(v)
+
+    @jit
+    def papu(u):
+        pu = u - v@(v.T@u)
+        Apu = A@pu
+        pApu = Apu - v@(v.T@Apu)
+        return pApu
+
+    def py(u_k, w):
+        if len(w.shape) != 0:
+            c, Aiu, Aivw = C(u_k, w)
+            Py = Aiu + jnp.expand_dims(jnp.sum(Aivw * c.T,1),1) 
+        else:
+            u_p = Aspsolve(u_k)
+            c = -v.T@u_p/(v.T@v_1).item()
+            
+            Py = u_p + c*v_1
+        return Py
+    
+    @jit
+    def C(u_k, w):
+        c = jnp.zeros(w.shape[1]+1)
+        vw = jnp.concatenate([v,w],axis=1)
+        Aiu = Aspsolve(u_k)
+        Aivw = Aspsolve(vw)
+        
+        c = jnp.linalg.inv(vw.T@Aivw)@(-vw.T@Aiu)
+        return c, Aiu, Aivw
+    
+    def _rqi(u_k, w=jnp.array(0)):
+        s_k = (u_k.T@A@u_k).item()
+        err = jnp.linalg.norm(papu(u_k) - s_k*u_k)
+        errs = [err]
+        i = 0
+        while (err > eps) and (i < maxiters):
+            Py = py(u_k,w)
+            
+            u_k = Py / jnp.linalg.norm(Py)
+            
+            s_k = (u_k.T@A@u_k).item()
+            err = jnp.linalg.norm(papu(u_k) - s_k*u_k)
+            
+            errs.append(err)
+            if i > 80 and errs[-1] < errs[-2]:
+                break
+            
+            i+=1
+            
+        return u_k, s_k
+
+    U = []
+    w = []
+    S = []
+    u,s = _rqi(u_0)
+    i = 1
+    while len(U) < k:
+        _, key = jax.random.split(key)
+        u_0 = jax.random.normal(key, shape=(n,1))
+        if s > eps:
+            U.append(u)
+            S.append(s)
+            print('eigenvalue {}: {:.3f}'.format(i, s))
+        if len(U) >= k:
+            break
+        w.append(u)
+        u, s = _rqi(u_0,w=jnp.concatenate(w,axis=-1))
+        i += 1
+    return jnp.concatenate(U,axis=-1), jnp.array(S)
+
+
 """====Matrix utilities==== """
 
 def _sqrtm(C):
@@ -46,16 +152,28 @@ def _sqrtm(C):
     evalues, evectors = jnp.linalg.eig(C)
     # Ensuring square root matrix exists
     sqrt_matrix = evectors @ jnp.diag(jnp.sqrt(evalues)) @ jnp.linalg.inv(evectors)
-    return sqrt_matrix.real
+    return sqrt_matrix
 
 def qr_null(A, tol=None):
-    Q, R, P = sp.linalg.qr(A.T, mode='full', pivoting=True)
+    Q, R, P = qr(A.T, mode='full', pivoting=True)
     tol = jnp.finfo(R.dtype).eps if tol is None else tol
     Q=jnp.array(Q)
     rnk = min(A.shape) - jnp.searchsorted(jnp.abs(jnp.diag(R))[::-1], tol)#jnp.abs(jnp.diag(R))[::-1].searchsorted(tol)
     #rnk = min(A.shape) - np.abs(jnp.diag(R))[::-1].searchsorted(tol)
     #return Q[:, rnk:].conj()
     return Q, rnk
+
+def nonzero_eig(A, eps=1e-5):
+    w,v = jnp.linalg.eig(A)
+    w = w.at[w < eps].set(0)
+    sidx = jnp.argsort(w)
+    idx = sidx[jnp.in1d(sidx, jnp.flatnonzero(w!=0))]
+    return w[idx],v[:,idx]
+
+def sorted_eig(A):
+    w,v = jnp.linalg.eig(A)
+    sidx = jnp.argsort(w)
+    return w[sidx],v[:,sidx]
 
 """====Graph utilities==== """
 
@@ -69,9 +187,9 @@ def load_graph(graphpath, A=None, plot_adjacency=False, verbose=True):
         A = nx.convert_matrix.to_scipy_sparse_matrix(G).astype(np.int16)
     else:
         G = nx.from_numpy_matrix(A.astype(int)!= 0, create_using=None)
-        graph = sp.sparse.csc_matrix(A)
-        A = sp.sparse.coo_matrix(A).astype(np.int16)
-    L = sp.sparse.csr_matrix(csgraph_laplacian(A, normed=False)).astype(np.float32)
+        graph = sp.csc_matrix(A)
+        A = sp.coo_matrix(A).astype(np.int16)
+    L = sp.csr_matrix(csgraph_laplacian(A, normed=False)).astype(np.float32)
     D = np.diag(np.sum(A, axis=1))
     n = A.shape[0]
     
@@ -126,7 +244,7 @@ def plot_results(result,sigfig=2):
     fig, axes = plt.subplots(
     3, 2, figsize=(25, 8), sharex=True)
     
-    foc = result['foc']
+    foc = np.array(result['foc'])
     log_foc = np.log(foc)
     step_sizes = result['step_sizes']
     loss_history = result['lossh']
@@ -135,8 +253,10 @@ def plot_results(result,sigfig=2):
     min_logloss = np.min(log_loss_history)
     min_loss_idx = np.argmin(loss_history)
     
-    gc = np.round(result['g'], sigfig)
-    hc = np.round(result['h'], sigfig)
+    #gc = np.round(result['g'], sigfig)
+    #hc = np.round(result['h'], sigfig)
+    gc = 0.0
+    hc = 0.0
     
     axes[0,0].plot(loss_history)
     axes[0,0].set_title('loss: {:.3f} h: {} g: {}'.format(min_loss, np.round(hc,sigfig), np.round(gc,sigfig)))
@@ -156,8 +276,12 @@ def plot_results(result,sigfig=2):
     axes[2,1].set_title('log-first order condtion: initial foc: {:.3f}, final foc: {:.3f}, min-loss foc: {:.3f}'.format(log_foc[0], log_foc[-1],log_foc[min_loss_idx]))    
     
     for ax in axes:
-        ax[0].axvline(x=min_loss_idx, c='gray')
-        ax[1].axvline(x=min_loss_idx, c='gray')
+        ax[0].axvline(x=min_loss_idx, c='red')
+        ax[1].axvline(x=min_loss_idx, c='red')
+        
+        for ii in range(10):
+            ax[1].axvline(x=20*ii+ii, c='gray')
+            ax[0].axvline(x=20*ii+ii, c='gray')
      
     #pap = result['P']@L@result['P'].T
     #print(result['L'][-1].real,
