@@ -10,7 +10,6 @@ from PIL import Image
 import scipy.sparse.csgraph as csgraph
 from scipy.sparse.csgraph import laplacian as csgraph_laplacian
 from scipy import sparse as sp
-#import scipy as 
 from scipy.linalg import null_space, qr
 from scipy.linalg import sqrtm
 
@@ -24,6 +23,7 @@ import utils
 from objectives import *
 
 from functools import partial
+from collections import namedtuple
 import itertools
 
 import numpy as np
@@ -38,7 +38,6 @@ import datetime
 from tqdm.notebook import tqdm
 
 import networkx as nx
-
 
 def rqi(A, M=None, v=None, s=0, k=2, eps=1e-6, maxiters=100, seed=0):
     """Rayleigh quotient iteration 
@@ -144,8 +143,70 @@ def rqi(A, M=None, v=None, s=0, k=2, eps=1e-6, maxiters=100, seed=0):
         i += 1
     return jnp.concatenate(U,axis=-1), jnp.array(S)
 
+def update_trace(trace, lo, s, oc, c, sp, lag, ss):
+    trace['loss'].extend(lo)
+    trace['step_size'].extend(s)
+    trace['opt_conditions'].extend(oc)
+    trace['constraints'].extend(c)
+    trace['solution_path'].extend(sp)
+    trace['lagrangian'].extend(lag)
+    trace['subspaces'].extend(ss)
+    return trace  
+    
+def init_trace():
+    trace = {
+        'loss': [],
+        'step_size': [],
+        'opt_conditions': [],
+        'constraints': [],
+        'solution_path': [],
+        'lagrangian': [],
+        'subspaces': [],
+    }
+    return trace
+
+def init_params(A, A_x, A_y, X, mask, E_0, v, L=jnp.eye(2), Q=None):
+    params = {
+        'A':A,
+        'A_x':A_x,
+        'A_y':A_y,
+        'X': X,
+        'mask': mask,
+        'E_0': E_0,
+        'v': v,
+        'L': L,
+        'Q': Q
+    }
+    return params   
+
+def init_hparams():
+    hparams = {
+        'num_ssm_iters':10,
+        'num_sqp_iters':20,
+        'alpha':0,
+        'beta':0,
+        'eps':0,
+    }
+    pass
+
+def complete_matrix(X_free, X_fixed, mask):
+    n = mask.shape[0]
+    X = jnp.zeros((n,2))
+    X = X.at[mask].set(X_free)
+    X = X.at[~mask].set(X_fixed)
+    return X
+
+
+def complete_placement(p, X):
+    return complete_matrix(X, p['X'][~p['mask']],p['mask'])
 
 """====Matrix utilities==== """
+def sp_eye(n):
+    if hasattr(n, 'shape'):
+        n = n.shape[0]
+    I = sp.identity(n)
+    I = sparse.BCOO.from_scipy_sparse(I)
+    return I
 
 def _sqrtm(C):
     # Computing diagonalization
@@ -158,9 +219,7 @@ def qr_null(A, tol=None):
     Q, R, P = qr(A.T, mode='full', pivoting=True)
     tol = jnp.finfo(R.dtype).eps if tol is None else tol
     Q=jnp.array(Q)
-    rnk = min(A.shape) - jnp.searchsorted(jnp.abs(jnp.diag(R))[::-1], tol)#jnp.abs(jnp.diag(R))[::-1].searchsorted(tol)
-    #rnk = min(A.shape) - np.abs(jnp.diag(R))[::-1].searchsorted(tol)
-    #return Q[:, rnk:].conj()
+    rnk = min(A.shape) - jnp.searchsorted(jnp.abs(jnp.diag(R))[::-1], tol)
     return Q, rnk
 
 def nonzero_eig(A, eps=1e-5):
@@ -182,8 +241,6 @@ def load_graph(graphpath, A=None, plot_adjacency=False, verbose=True):
         mat_data = io.loadmat(graphpath + '.mat')
         graph = mat_data['Problem']['A'][0][0]
         G = nx.from_numpy_matrix(graph.toarray().astype(int)!= 0, create_using=None)
-        #A = nx.adjacency_matrix(G).toarray().astype(np.int16)
-        #A = nx.adjacency_matrix(G).astype(np.int16)
         A = nx.convert_matrix.to_scipy_sparse_matrix(G).astype(np.int16)
     else:
         G = nx.from_numpy_matrix(A.astype(int)!= 0, create_using=None)
@@ -239,15 +296,15 @@ def clust_to_mask(cluster, cid):
 
 """====Visualization utilities==== """
 
-def plot_results(result,sigfig=2):
+def plot_results(result,sigfig=2,num_ssm_iter=10,num_newton_iter=20):
     """result keys: x, lossh, sln_path, g, h, step_sizes"""
     fig, axes = plt.subplots(
     3, 2, figsize=(25, 8), sharex=True)
     
-    foc = np.array(result['foc'])
+    foc = np.array(result['opt_conditions'])[:,0]
     log_foc = np.log(foc)
-    step_sizes = result['step_sizes']
-    loss_history = result['lossh']
+    step_sizes = result['step_size']
+    loss_history = result['loss']
     log_loss_history = np.log(loss_history)
     min_loss = np.min(loss_history)
     min_logloss = np.min(log_loss_history)
@@ -279,15 +336,9 @@ def plot_results(result,sigfig=2):
         ax[0].axvline(x=min_loss_idx, c='red')
         ax[1].axvline(x=min_loss_idx, c='red')
         
-        for ii in range(10):
-            ax[1].axvline(x=20*ii+ii, c='gray')
-            ax[0].axvline(x=20*ii+ii, c='gray')
-     
-    #pap = result['P']@L@result['P'].T
-    #print(result['L'][-1].real,
-    #np.linalg.eig(['L'][-1])[0].real, 
-    #np.sort(np.linalg.eig(pap)[0])[:10].real,
-    #1.0 - ( np.count_nonzero(pap) / float(pap.size) ), 1.0 - ( np.count_nonzero(L) / float(L.size) ))
+        for ii in range(num_ssm_iter):
+            ax[1].axvline(x=num_newton_iter*ii+ii, c='gray')
+            ax[0].axvline(x=num_newton_iter*ii+ii, c='gray')
     
     trans = mtrans.blended_transform_factory(fig.transFigure,
                                          mtrans.IdentityTransform())
