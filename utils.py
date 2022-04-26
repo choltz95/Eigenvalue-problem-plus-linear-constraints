@@ -64,7 +64,7 @@ def rqi(A, M=None, v=None, s=0, k=2, eps=1e-6, maxiters=100, seed=0):
         #v = v / np.linalg.norm(v)
         #v = A@v
     I = sp.identity(n)
-    I = sparse.BCOO.from_scipy_sparse(I)
+    I = sparse.BCOO.from_scipy_sparse(I) 
     s = 0.
     As = A - s*I
     _matvec = lambda x: As@x
@@ -209,10 +209,19 @@ def sp_eye(n):
     return I
 
 def _sqrtm(C):
+    #TODO gpu changes
     # Computing diagonalization
+
+    # C = jax.device_put(C, device=jax.devices('cpu')[0])
     evalues, evectors = jnp.linalg.eig(C)
+
+    # evectors = jax.device_put(evectors, device=jax.devices('gpu')[0])
+    # evalues = jax.device_put(evalues, device=jax.devices('gpu')[0])
+
     # Ensuring square root matrix exists
     sqrt_matrix = evectors @ jnp.diag(jnp.sqrt(evalues)) @ jnp.linalg.inv(evectors)
+
+    # sqrt_matrix = jax.device_put(sqrt_matrix, device=jax.devices('gpu')[0])
     return sqrt_matrix
 
 def qr_null(A, tol=None):
@@ -223,6 +232,8 @@ def qr_null(A, tol=None):
     return Q, rnk
 
 def nonzero_eig(A, eps=1e-5):
+    #TODO gpu changes
+    # A = jax.device_put(A, device = jax.devices('cpu')[0])
     w,v = jnp.linalg.eig(A)
     w = w.at[w < eps].set(0)
     sidx = jnp.argsort(w)
@@ -230,6 +241,7 @@ def nonzero_eig(A, eps=1e-5):
     return w[idx],v[:,idx]
 
 def sorted_eig(A):
+    #TODO gpu changes
     w,v = jnp.linalg.eig(A)
     sidx = jnp.argsort(w)
     return w[sidx],v[:,sidx]

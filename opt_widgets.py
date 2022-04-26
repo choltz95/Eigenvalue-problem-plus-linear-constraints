@@ -45,11 +45,12 @@ def subspace(X_k, Z, v, A, E_0, C):
     PQ = Q - v_s@(v_s.T@Q)
     B=PQ.T@(A@PQ)
     w,v = nonzero_eig(B)
+    # v = jax.device_put(v, device = jax.devices('gpu')[0])
     v = Q@v[:,:2] 
     
     return Q,v 
 
-@jit
+#@jit
 def project(X1, C, E_0, c=jnp.array([0,0])):
     C1 = X1.T@X1
     C1sqrt = utils._sqrtm(C1)
@@ -78,7 +79,10 @@ def _D_Z(X, A, d, e):
 @jit
 def sqp(A, L, E_0, X):
     """Perform an iteration of SQP.""" 
-    w = jnp.linalg.eigvals(L)
+    # L = jax.device_put(L, device=jax.devices('cpu')[0])
+    w = jnp.linalg.eigvalsh(L)
+    # w = jax.device_put(w, device=jax.devices('gpu')[0])
+    # L = jax.device_put(L, device=jax.devices('gpu')[0])
     idx = w.argsort() 
     w = w[idx]
     E = -E_0 - (A@X + X@L)
@@ -93,15 +97,18 @@ def sqp(A, L, E_0, X):
 
 def scipy_sqp(X, A, P, L, E_0, I):
     """Perform an iteration of SQP.""" 
-    w = jnp.linalg.eigvals(L)
+    # L = jax.device_put(L, device=jax.devices('cpu')[0])
+    w = jnp.linalg.eigvalsh(L)
+    # w = jax.device_put(w, device=jax.devices('gpu')[0])
+    # L = jax.device_put(L, device=jax.devices('gpu')[0])
     idx = w.argsort()  
     w = w[idx]
     v = np.ones((A.shape[0],1))/np.sqrt(A.shape[0])
     AX = A@(X - v@(v.T@X))
     AX = AX - v@(v.T@AX)
     E = -E_0 - (AX + X@L)
-    Del_0, Z_0 = scipy_D_Z(X, A, P, w[0], E[:,0], I)
-    Del_1, Z_1 = scipy_D_Z(X, A, P, w[1], E[:,1], I)
+    Del_0, Z_0 = _scipy_D_Z(X, A, P, w[0], E[:,0], I)
+    Del_1, Z_1 = _scipy_D_Z(X, A, P, w[1], E[:,1], I)
     
     Z = jnp.stack([Z_0, Z_1], axis=1)
     Del = jnp.stack([Del_0, Del_1], axis=1)
@@ -128,6 +135,36 @@ def scipy_D_Z(X, A, P, d, e, I):
 
     PXDE = XDE - (XDE@v_s)@v_s.T
     ADinvP = sp_solve(Ad, PXDE)
+    Z = ADinvP - v_s@(v_s.T@ADinvP)
+    
+    return Del, Z
+
+def Adpsolve(A, b, Ad = None, M=None, **kwargs):
+    x0 = None
+    if Ad is not None:
+        _x0 = jax.random.normal(key = jax.random.PRNGKey(0),shape = b.shape)
+        x0 = Ad@_x0
+    res = jax.scipy.sparse.linalg.cg(A, b, x0=x0, M=M, **kwargs)[0]
+    return res
+
+def _scipy_D_Z(X, A, P, d, e, I):
+    Ad = A + (d+1e-2)*I
+    matvec = jit(lambda x: Ad@x)
+
+    #TODO Preconditioner
+    M = None
+
+    val_1 = Adpsolve(matvec,X,M=M)
+    val_2 = Adpsolve(matvec,e,M=M)
+    
+    Del = jnp.linalg.solve(X.T@(val_1),X.T)@val_2
+    v_s = np.ones((A.shape[0],1))/np.sqrt(A.shape[0])
+    XDE = (-X@Del + e)
+
+    PXDE = XDE - (XDE@v_s)@v_s.T
+
+    ADinvP = Adpsolve(matvec,PXDE, M=M)
+
     Z = ADinvP - v_s@(v_s.T@ADinvP)
     
     return Del, Z
