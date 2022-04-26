@@ -229,6 +229,11 @@ def nonzero_eigh(A, eps=1e-5):
     idx = sidx[jnp.in1d(sidx, jnp.flatnonzero(w!=0))]
     return w[idx],v[:,idx]
 
+def sorted_eigh(A):
+    w,v = jnp.linalg.eigh(A)
+    sidx = jnp.argsort(jnp.abs(w))
+    return w[sidx],v[:,sidx]
+
 def nonzero_eig(A, eps=1e-5):
     w,v = jnp.linalg.eig(A)
     w = w.at[w < eps].set(0)
@@ -238,7 +243,7 @@ def nonzero_eig(A, eps=1e-5):
 
 def sorted_eig(A):
     w,v = jnp.linalg.eig(A)
-    sidx = jnp.argsort(w)
+    sidx = jnp.argsort(jnp.abs(w))
     return w[sidx],v[:,sidx]
 
 """====Graph utilities==== """
