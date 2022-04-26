@@ -222,6 +222,13 @@ def qr_null(A, tol=None):
     rnk = min(A.shape) - jnp.searchsorted(jnp.abs(jnp.diag(R))[::-1], tol)
     return Q, rnk
 
+def nonzero_eigh(A, eps=1e-5):
+    w,v = jnp.linalg.eigh(A)
+    w = w.at[w < eps].set(0)
+    sidx = jnp.argsort(w)
+    idx = sidx[jnp.in1d(sidx, jnp.flatnonzero(w!=0))]
+    return w[idx],v[:,idx]
+
 def nonzero_eig(A, eps=1e-5):
     w,v = jnp.linalg.eig(A)
     w = w.at[w < eps].set(0)

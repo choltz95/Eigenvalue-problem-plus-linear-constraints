@@ -31,7 +31,7 @@ def PX(v, X):
 def XP(X,v):
     return X - (X@v)@v.T
 
-#@jit
+@jit
 def subspace(X_k, Z, v, A, E_0, C):
     v_s = jnp.ones((A.shape[0],1))/np.sqrt(A.shape[0])
     X_k = X_k - v_s@(v_s.T@X_k)
@@ -44,12 +44,12 @@ def subspace(X_k, Z, v, A, E_0, C):
     
     PQ = Q - v_s@(v_s.T@Q)
     B=PQ.T@(A@PQ)
-    w,v = nonzero_eig(B)
-    v = Q@v[:,:2] 
+    #w,v = nonzero_eigh(B)
+    #v = Q@v[:,:2] 
     
-    return Q,v 
+    return Q,B 
 
-@jit
+@partial(jit, backend='cpu')
 def project(X1, C, E_0, c=jnp.array([0,0])):
     C1 = X1.T@X1
     C1sqrt = utils._sqrtm(C1)
@@ -78,7 +78,7 @@ def _D_Z(X, A, d, e):
 @jit
 def sqp(A, L, E_0, X):
     """Perform an iteration of SQP.""" 
-    w = jnp.linalg.eigvals(L)
+    w = jnp.linalg.eigvalsh(L)
     idx = w.argsort() 
     w = w[idx]
     E = -E_0 - (A@X + X@L)
@@ -93,7 +93,7 @@ def sqp(A, L, E_0, X):
 
 def scipy_sqp(X, A, P, L, E_0, I):
     """Perform an iteration of SQP.""" 
-    w = jnp.linalg.eigvals(L)
+    w = jnp.linalg.eigvalsh(L)
     idx = w.argsort()  
     w = w[idx]
     v = np.ones((A.shape[0],1))/np.sqrt(A.shape[0])
