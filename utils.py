@@ -231,8 +231,14 @@ def nonzero_eigh(A, eps=1e-5):
 
 def sorted_eigh(A):
     w,v = jnp.linalg.eigh(A)
-    sidx = jnp.argsort(jnp.abs(w))
+    sidx = jnp.argsort(w) # why absolute value??
     return w[sidx],v[:,sidx]
+
+def positive_sorted_eigh(A):
+    w = jnp.linalg.eigvalsh(A)
+    w = jnp.abs(w)
+    sidx = jnp.argsort(w) # why absolute value??
+    return w[sidx]
 
 def nonzero_eig(A, eps=1e-5):
     w,v = jnp.linalg.eig(A)

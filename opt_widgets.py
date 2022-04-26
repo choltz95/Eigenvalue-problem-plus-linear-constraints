@@ -33,7 +33,6 @@ def XP(X,v):
 
 @jit
 def subspace(X_k, Z, v, A, E_0, C, v_s):
-    v_s = jnp.ones((A.shape[0],1))/np.sqrt(A.shape[0])
     X_k = PX(v_s, X_k)
     AX = A@X_k
     AX = PX(v_s, AX)
@@ -42,7 +41,7 @@ def subspace(X_k, Z, v, A, E_0, C, v_s):
     Z = PX(v_s,Z)
     Q, _ = jnp.linalg.qr(jnp.concatenate([X_k, Z, v, AXE],axis=-1), mode='reduced')
     
-    PQ = Q - v_s@(v_s.T@Q)
+    PQ = PX(v_s, Q)
     B=PQ.T@(A@PQ)
     #w,v = nonzero_eigh(B)
     #v = Q@v[:,:2] 
@@ -78,10 +77,8 @@ def _D_Z(X, A, d, e):
 @jit
 def sqp(A, L, E_0, X):
     """Perform an iteration of SQP.""" 
-    #w = jnp.linalg.eigvalsh(L)
-    w = sorted_eigh(L)[0]
-    idx = w.argsort() 
-    w = w[idx]
+    w = positive_sorted_eigh(A)
+    
     E = -E_0 - (A@X + X@L)
 
     Del_0, Z_0 = _D_Z(X, A, w[0], E[:,0])
