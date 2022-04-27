@@ -77,7 +77,7 @@ def _D_Z(X, A, d, e):
 @jit
 def sqp(A, L, E_0, X):
     """Perform an iteration of SQP.""" 
-    w = positive_sorted_eigh(A)
+    w = positive_sorted_eigh(L)
     
     E = -E_0 - (A@X + X@L)
 
